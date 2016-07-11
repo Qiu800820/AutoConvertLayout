@@ -40,7 +40,7 @@ public class ConvertConfigDialog extends DialogWrapper {
         assert mRepository != null;
 
         if (mRepository.getState() == null) {
-            mRepository.loadState(new ConvertConfig());
+            mRepository.loadState(ConvertConfig.getInstance());
         }
 
         setTitle("Convert Layout XML to Java");
@@ -152,7 +152,7 @@ public class ConvertConfigDialog extends DialogWrapper {
     }
 
     private ConvertConfig getConfig() {
-        ConvertConfig config = new ConvertConfig();
+        ConvertConfig config = ConvertConfig.getInstance();
         config.prefix = getPrefix();
         config.format = getFormat();
         config.visibility = getVisibility();
@@ -281,9 +281,7 @@ public class ConvertConfigDialog extends DialogWrapper {
     protected void doOKAction() {
         super.doOKAction();
 
-        ConvertConfig config = getConfig();
-
-        mRepository.loadState(config);
-        new ConvertExecutor().execute(mProject, mLayoutFile, config);
+        mRepository.loadState(getConfig());
+        new ConvertExecutor().execute(mProject, mLayoutFile);
     }
 }

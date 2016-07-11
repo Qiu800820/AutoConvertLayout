@@ -4,6 +4,7 @@ import com.google.common.base.Objects;
 import com.google.common.collect.Lists;
 import main.ConvertConfig;
 import main.ConvertExecutor;
+import org.apache.batik.css.engine.value.svg.BaselineShiftManager;
 import org.apache.commons.lang.StringUtils;
 
 
@@ -20,73 +21,79 @@ public class AndroidViewInfo {
 
     public static final String SWIPE_REFRESH_LAYOUT = "SwipeRefreshLayout";
 
-    public static final String ON_CLICK_LISTENER = "onClick";
-    public static final String ON_REFRESH_LISTENER = "onRefresh";
     public static final String ON_SEARCH_LISTENER = "actionSearch";
-    public static final String ON_SNED_LISTENER = "actionSend";
+    public static final String ON_SEND_LISTENER = "actionSend";
 
     
     public String type;
     public String id;
-    public List<String> listeners;
+    public String field;
+
+    public List<BaseListener> listeners;
 
     public AndroidViewInfo(String type, String id) {
         this.type = type;
         this.id = id;
+        field = getJavaSymbolName(ConvertConfig.getInstance());
     }
 
-    public void addListener(String string){
+    public void addListener(BaseListener listener){
         if(listeners == null)
-            listeners = new ArrayList<String>();
-        listeners.add(string);
+            listeners = new ArrayList<BaseListener>();
+        listeners.add(listener);
     }
 
     public String toListenerString(){
         if(listeners == null || listeners.size() == 0)
-            return null;
+            return "";
 
         StringBuilder listenerJavaCode = new StringBuilder();
 
-        for(String listener : listeners){
-            // TODO  create Listener String
+        for(BaseListener listener : listeners){
+            // OnClick
+            if(listener instanceof OnClick) {
+                listenerJavaCode.append(String.format("\t%s.setOnClickListener(listener)\n", field));
+            }else{
+                //Other
+                listenerJavaCode.append(listener.toListenerString(field));
+            }
         }
 
 
         return listenerJavaCode.toString();
     }
 
-    public String toFieldString(ConvertConfig config, String visibility){
+    public String toFieldString(String visibility){
         StringBuilder fieldJavaCode = new StringBuilder();
 
-        String symbol = getJavaSymbolName(config);
 
-        if (config.format == ConvertConfig.ConvertFormat.ANDROID_ANNOTATIONS) {
-            if (config.prefix.willModify()) {
-                fieldJavaCode.append(String.format("@ViewById(R.id.%s)" + NL + "%s%s %s;" + NL, this.id, visibility, type, symbol));
+        if (ConvertConfig.getInstance().format == ConvertConfig.ConvertFormat.ANDROID_ANNOTATIONS) {
+            if (ConvertConfig.getInstance().prefix.willModify()) {
+                fieldJavaCode.append(String.format("@ViewById(R.id.%s)" + NL + "%s%s %s;" + NL, this.id, visibility, type, field));
             } else {
-                fieldJavaCode.append(String.format("@ViewById" + NL + "%s%s %s;" + NL, visibility, type, symbol));
+                fieldJavaCode.append(String.format("@ViewById" + NL + "%s%s %s;" + NL, visibility, type, field));
             }
-        } else if (config.format == ConvertConfig.ConvertFormat.BUTTER_KNIFE) {
+        } else if (ConvertConfig.getInstance().format == ConvertConfig.ConvertFormat.BUTTER_KNIFE) {
             // Butter Knife always requires resource-id
-            fieldJavaCode.append(String.format("@InjectView(R.id.%s)" + NL + "%s%s %s;" + NL, this.id, visibility, type, symbol));
+            fieldJavaCode.append(String.format("@InjectView(R.id.%s)" + NL + "%s%s %s;" + NL, this.id, visibility, type, field));
         } else {
-            fieldJavaCode.append(String.format("%s%s %s;" + NL, visibility, type, symbol));
+            fieldJavaCode.append(String.format("%s%s %s;" + NL, visibility, type, field));
         }
         return fieldJavaCode.toString();
 
     }
 
 
-    public String toMethodString(ConvertConfig config, ConvertExecutor.Tree viewNameTree){
+    public String toMethodString(ConvertExecutor.Tree viewNameTree){
         StringBuilder methodJavaCode = new StringBuilder();
-        String type = config.useSmartType ? findOptimalType(viewNameTree) : this.type;
-        String symbol = getJavaSymbolName(config);
+        String type = ConvertConfig.getInstance().useSmartType ? findOptimalType(viewNameTree) : this.type;
+        String symbol = getJavaSymbolName(ConvertConfig.getInstance());
 
 
         if (type.equals("View")) {
-            methodJavaCode.append(String.format("    %s = findViewById(R.id.%s);" + NL, symbol, this.id));
+            methodJavaCode.append(String.format("\t%s = findViewById(R.id.%s);" + NL, symbol, this.id));
         } else {
-            methodJavaCode.append(String.format("    %s = (%s) findViewById(R.id.%s);" + NL, symbol, type, this.id));
+            methodJavaCode.append(String.format("\t%s = (%s) findViewById(R.id.%s);" + NL, symbol, type, this.id));
         }
         return methodJavaCode.toString();
 

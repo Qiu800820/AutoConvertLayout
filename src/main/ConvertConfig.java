@@ -1,5 +1,20 @@
 package main;
 public class ConvertConfig {
+
+    private static ConvertConfig mInstance;
+
+    public static ConvertConfig getInstance(){
+        if(mInstance == null){
+            synchronized (ConvertConfig.class){
+                if(mInstance == null){
+                    mInstance = new ConvertConfig();
+                }
+            }
+        }
+
+        return mInstance;
+    }
+
     public enum ConvertPrefix {
         NONE, MEMBER, UNDERSCORE;
 

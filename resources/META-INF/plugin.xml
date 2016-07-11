@@ -25,7 +25,7 @@
     -->
 
     <extensions defaultExtensionNs="com.intellij">
-        <!-- Add your extensions here -->
+        <projectService serviceImplementation="main.ConvertConfigRepository" serviceInterface="main.ConvertConfigRepository"/>
     </extensions>
 
     <actions>

@@ -1,6 +1,7 @@
 package main;
 import com.google.common.base.Objects;
 import com.google.common.collect.Lists;
+import com.intellij.codeInsight.EditorInfo;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationType;
 import com.intellij.notification.Notifications;
@@ -13,6 +14,9 @@ import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.SearchScope;
 import com.intellij.psi.search.searches.ClassInheritorsSearch;
 import main.view.AndroidViewInfo;
+import main.view.EditActionListener;
+import main.view.OnClick;
+import main.view.OnRefresh;
 import org.apache.commons.lang.StringUtils;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
@@ -23,7 +27,6 @@ import javax.xml.parsers.ParserConfigurationException;
 import java.awt.datatransfer.StringSelection;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -42,7 +45,7 @@ public class ConvertExecutor {
         }
     }
 
-    public void execute(Project project, VirtualFile file, ConvertConfig config) {
+    public void execute(Project project, VirtualFile file) {
         List<AndroidViewInfo> infos;
         InputStream is = null;
         try {
@@ -59,8 +62,8 @@ public class ConvertExecutor {
             }
         }
 
-        Tree viewNameTree = config.useSmartType ? prepareViewNames(project) : null;
-        String javaCode = generateJavaCode(infos, viewNameTree, config);
+        Tree viewNameTree = ConvertConfig.getInstance().useSmartType ? prepareViewNames(project) : null;
+        String javaCode = generateJavaCode(infos, viewNameTree);
 
         CopyPasteManager.getInstance().setContents(new StringSelection(javaCode));
 
@@ -86,8 +89,8 @@ public class ConvertExecutor {
      * android:id="@+id/view"
      *
      * ViewInfo(Button, view)
-     * @param node
-     * @return
+     * @param node Node
+     * @return List AndroidViewInfo
      */
     private List<AndroidViewInfo> traverseViewInfos(Node node) {
         List<AndroidViewInfo> infos = Lists.newArrayList();
@@ -95,7 +98,7 @@ public class ConvertExecutor {
         if (node.getNodeType() == Node.ELEMENT_NODE) {
             Node idNode = node.getAttributes().getNamedItem("android:id");
 
-
+            //第一个过滤条件 ID不为空
             if (idNode != null) {
                 String value = idNode.getNodeValue();
                 String[] values = value.split("/");
@@ -105,22 +108,30 @@ public class ConvertExecutor {
                 }
 
                 String[] elements = node.getNodeName().split("\\.");
-                AndroidViewInfo viewInfo = new AndroidViewInfo(elements[elements.length - 1], values[1]);
+                // 第二个过滤条件 临时ID 特殊标签
+                if(!elements[elements.length - 1].equals("include") && !elements[elements.length - 1].equals("merge") && !values[1].startsWith("tem")) {
 
-                //onClick
-                if(node.getAttributes().getNamedItem("android:onClick") != null){
-                    viewInfo.addListener(AndroidViewInfo.ON_CLICK_LISTENER);
-                }
-                //EditText imeOptions : Search|Send
-                if(node.getAttributes().getNamedItem("android:imeOptions") != null){
-                    viewInfo.addListener(node.getAttributes().getNamedItem("android:imeOptions").getNodeValue());
-                }
-                //SwipeRefreshLayout onRefresh
-                if(StringUtils.equals(viewInfo.type, AndroidViewInfo.SWIPE_REFRESH_LAYOUT)) {
-                    viewInfo.addListener(AndroidViewInfo.ON_REFRESH_LISTENER);
-                }
 
-                infos.add(viewInfo);
+                    AndroidViewInfo viewInfo = new AndroidViewInfo(elements[elements.length - 1], values[1]);
+
+                    //onClick
+                    if (node.getAttributes().getNamedItem("android:clickable") != null && node.getAttributes().getNamedItem("android:clickable").getNodeValue().equals("true")) {
+                        viewInfo.addListener(OnClick.getInstance().addId(viewInfo.id));
+                    }
+                    //EditText imeOptions : Search|Send
+                    if (node.getAttributes().getNamedItem("android:imeOptions") != null) {
+                        String action = node.getAttributes().getNamedItem("android:imeOptions").getNodeValue();
+                        if (AndroidViewInfo.ON_SEARCH_LISTENER.equals(action) || AndroidViewInfo.ON_SEND_LISTENER.equals(action))
+                            viewInfo.addListener(new EditActionListener(action));
+
+                    }
+                    //SwipeRefreshLayout onRefresh
+                    if (StringUtils.equals(viewInfo.type, AndroidViewInfo.SWIPE_REFRESH_LAYOUT)) {
+                        viewInfo.addListener(new OnRefresh());
+                    }
+
+                    infos.add(viewInfo);
+                }
             }
         }
 
@@ -132,15 +143,16 @@ public class ConvertExecutor {
         return infos;
     }
 
-    private String generateJavaCode(List<AndroidViewInfo> infos, Tree viewNameTree, ConvertConfig config) {
+    private String generateJavaCode(List<AndroidViewInfo> infos, Tree viewNameTree) {
         StringBuilder fieldJavaCode = new StringBuilder();
         StringBuilder methodJavaCode = new StringBuilder();
+        StringBuilder listenerJavaCode = new StringBuilder();
 
         String NL = "\n";
 
 
         final String visibility;
-        switch (config.visibility) {
+        switch (ConvertConfig.getInstance().visibility) {
             case PROTECTED:
                 visibility = "protected ";
                 break;
@@ -158,15 +170,18 @@ public class ConvertExecutor {
         methodJavaCode.append(NL);
 
         for (AndroidViewInfo info : infos) {
-            fieldJavaCode.append(info.toFieldString(config, visibility));
-            methodJavaCode.append(info.toMethodString(config, viewNameTree));
+            fieldJavaCode.append(info.toFieldString(visibility));
+            methodJavaCode.append(info.toMethodString(viewNameTree));
+            listenerJavaCode.append(info.toListenerString());
         }
+
+        methodJavaCode.append(listenerJavaCode);
 
         methodJavaCode.append("}");
         methodJavaCode.append(NL);
 
-        if (config.format.requireAssignMethod()) {
-            return fieldJavaCode.toString() + NL + methodJavaCode.toString();
+        if (ConvertConfig.getInstance().format.requireAssignMethod()) {
+            return fieldJavaCode.toString() + NL + methodJavaCode.toString() + NL + OnClick.getInstance().toListenerString(null);
         } else {
             return fieldJavaCode.toString();
         }
